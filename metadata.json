@@ -1,0 +1,5 @@
+{
+  "name": "Worksheet to Interactive Quiz",
+  "description": "Upload an image of a worksheet or exercise and automatically convert it into an interactive online quiz using Gemini AI.",
+  "requestFramePermissions": []
+}
