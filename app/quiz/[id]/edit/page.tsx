@@ -279,6 +279,12 @@ This section is of type: ${sectionType}.`;
       const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
       const content = JSON.parse(cleaned);
 
+      // Ensure unique IDs in the rescanned content to avoid clashing with other sections
+      content.questions.forEach((q: any, qIdx: number) => {
+        // Use a unique prefix to avoid ID collisions with existing sections in the quiz
+        q.id = `q-${rescanSectionIndex}-${Date.now()}-${qIdx}-${q.id || 'new'}`;
+      });
+
       // Helper to crop image (replicated from CreatePage)
       const cropImage = async (base64: string, bbox: [number, number, number, number]): Promise<string> => {
         return new Promise((resolve, reject) => {

@@ -388,7 +388,14 @@ ${answerKey.trim() ? `Answer Key Text: ${answerKey.trim()}` : "An image of the a
         throw new Error("Failed to parse quiz data.");
       }
 
-      // Post-process bboxes into thumbnails
+      // Ensure unique IDs across sections and questions to avoid state sharing
+      data.sections.forEach((section: any, sIdx: number) => {
+        section.questions.forEach((question: any, qIdx: number) => {
+          // Always prefix to ensure global uniqueness within this quiz
+          question.id = `q-${sIdx}-${qIdx}-${question.id || 'new'}`;
+        });
+      });
+
       for (const section of data.sections) {
         for (const question of section.questions) {
           if (question.bbox && originalImage) {
@@ -633,6 +640,11 @@ This section is of type: ${sectionType}.`;
 
       const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
       const content = JSON.parse(cleaned);
+
+      // Ensure unique IDs in the rescanned content to avoid clashing with other sections
+      content.questions.forEach((q: any, qIdx: number) => {
+        q.id = `q-rescan-${rescanSectionIndex}-${Date.now()}-${qIdx}`;
+      });
 
       // Post-process bboxes into thumbnails
       for (const question of content.questions) {
