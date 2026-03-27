@@ -40,10 +40,18 @@ function getDb(): Database.Database {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         data TEXT NOT NULL,
+        original_image TEXT,
         answer_key TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
       )
     `);
+
+    // Migration
+    try {
+      db.exec('ALTER TABLE quizzes ADD COLUMN original_image TEXT');
+    } catch (e) {
+      // Column already exists
+    }
   }
   return db;
 }
@@ -52,6 +60,7 @@ export interface QuizRecord {
   id: string;
   title: string;
   data: Quiz;
+  originalImage: string | null;
   answerKey: string | null;
   createdAt: string;
 }
@@ -68,11 +77,11 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 }
 
-export function createQuiz(title: string, data: Quiz): string {
+export function createQuiz(title: string, data: Quiz, originalImage?: string): string {
   const db = getDb();
   const id = generateId();
-  const stmt = db.prepare('INSERT INTO quizzes (id, title, data) VALUES (?, ?, ?)');
-  stmt.run(id, title, JSON.stringify(data));
+  const stmt = db.prepare('INSERT INTO quizzes (id, title, data, original_image) VALUES (?, ?, ?, ?)');
+  stmt.run(id, title, JSON.stringify(data), originalImage || null);
   return id;
 }
 
@@ -84,6 +93,7 @@ export function getQuiz(id: string): QuizRecord | null {
     id: row.id,
     title: row.title,
     data: JSON.parse(row.data),
+    originalImage: row.original_image,
     answerKey: row.answer_key,
     createdAt: row.created_at,
   };
@@ -107,6 +117,12 @@ export function listQuizzes(): QuizListItem[] {
 export function deleteQuiz(id: string): boolean {
   const db = getDb();
   const result = db.prepare('DELETE FROM quizzes WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+export function updateQuiz(id: string, title: string, data: Quiz): boolean {
+  const db = getDb();
+  const result = db.prepare('UPDATE quizzes SET title = ?, data = ? WHERE id = ?').run(title, JSON.stringify(data), id);
   return result.changes > 0;
 }
 

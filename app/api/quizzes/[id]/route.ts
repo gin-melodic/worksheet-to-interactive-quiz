@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getQuiz, deleteQuiz, updateAnswerKey } from '@/lib/db';
+import { getQuiz, deleteQuiz, updateAnswerKey, updateQuiz } from '@/lib/db';
 
 export async function GET(
   req: NextRequest,
@@ -56,6 +56,9 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await req.json();
+    if (body.title !== undefined && body.data !== undefined) {
+      updateQuiz(id, body.title, body.data);
+    }
     if (body.answerKey !== undefined) {
       updateAnswerKey(id, body.answerKey);
     }

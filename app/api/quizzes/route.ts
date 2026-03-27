@@ -29,13 +29,13 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, data, answerKey } = body;
+    const { title, data, answerKey, originalImage } = body;
 
     if (!title || !data || !data.sections) {
       return NextResponse.json({ error: 'Missing title or quiz data' }, { status: 400 });
     }
 
-    const id = createQuiz(title, data);
+    const id = createQuiz(title, data, originalImage);
     if (answerKey) {
       updateAnswerKey(id, answerKey);
     }

@@ -129,6 +129,7 @@ export default function Home() {
                   key={quiz.id}
                   {...quiz}
                   onTake={(id) => router.push(`/quiz/${id}`)}
+                  onEdit={(id) => router.push(`/quiz/${id}/edit`)}
                   onDelete={handleDelete}
                 />
               ))}

@@ -52,4 +52,5 @@ export interface GradingResult {
   correctAnswers: string[];  // multiple acceptable answers (split by /)
   isCorrect: boolean;
   explanation?: string;
+  messages?: { role: 'user' | 'assistant'; content: string }[];
 }

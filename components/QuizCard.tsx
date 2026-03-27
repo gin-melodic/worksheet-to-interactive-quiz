@@ -16,7 +16,7 @@
 
 'use client';
 
-import { FileText, Trash2, ArrowRight } from 'lucide-react';
+import { FileText, Trash2, ArrowRight, Edit3 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface QuizCardProps {
@@ -26,6 +26,7 @@ interface QuizCardProps {
   sectionCount: number;
   createdAt: string;
   onTake: (id: string) => void;
+  onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -36,6 +37,7 @@ export function QuizCard({
   sectionCount,
   createdAt,
   onTake,
+  onEdit,
   onDelete,
 }: QuizCardProps) {
   const formattedDate = new Date(createdAt).toLocaleDateString('zh-CN', {
@@ -74,6 +76,16 @@ export function QuizCard({
         >
           开始作答
           <ArrowRight className="w-4 h-4" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(id);
+          }}
+          className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+          title="编辑试卷"
+        >
+          <Edit3 className="w-4 h-4" />
         </button>
         <button
           onClick={(e) => {

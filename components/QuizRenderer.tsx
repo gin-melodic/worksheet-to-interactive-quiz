@@ -16,8 +16,10 @@
 
 import React from 'react';
 import { Quiz, Section, GradingResult } from '@/types/quiz';
-import { CheckCircle2, XCircle, Lightbulb, Loader2, RefreshCw, Edit2, GripVertical, Trash2, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle2, XCircle, Lightbulb, Loader2, RefreshCw, Edit2, GripVertical, Trash2, Image as ImageIcon, MessageCircle, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const renderFormattedText = (text: string) => {
   const boldParts = text.split(/\*\*([^*]+)\*\*/g);
@@ -35,6 +37,48 @@ const renderFormattedText = (text: string) => {
   });
 };
 
+const AutoResizeTextarea = ({
+  value,
+  onChange,
+  className,
+  placeholder,
+  ...props
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  className?: string;
+  placeholder?: string;
+  rows?: number;
+  [key: string]: any;
+}) => {
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = () => {
+    const target = textareaRef.current;
+    if (target) {
+      target.style.height = 'auto';
+      target.style.height = target.scrollHeight + 'px';
+    }
+  };
+
+  React.useLayoutEffect(() => {
+    adjustHeight();
+  }, [value]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={onChange}
+      className={className}
+      placeholder={placeholder}
+      rows={props.rows || 1}
+      onInput={adjustHeight}
+      {...props}
+    />
+  );
+};
+
 interface QuizRendererProps {
   quiz: Quiz;
   mode?: 'preview' | 'interactive';
@@ -43,6 +87,7 @@ interface QuizRendererProps {
   submitted?: boolean;
   gradingResults?: GradingResult[];
   onExplain?: (result: GradingResult) => void;
+  onFollowUp?: (result: GradingResult, message: string) => void;
   onEdit?: (path: (string | number)[], value: string) => void;
   onRescan?: (sectionIndex: number) => void;
   onSetQuestionImage?: (sectionIndex: number, questionIndex: number) => void;
@@ -56,6 +101,7 @@ export function QuizRenderer({
   submitted: externalSubmitted,
   gradingResults,
   onExplain,
+  onFollowUp,
   onEdit,
   onRescan,
   onSetQuestionImage,
@@ -105,16 +151,10 @@ export function QuizRenderer({
                 <div className="flex-1">
                   {mode === 'preview' ? (
                     <div className="relative group">
-                      <textarea
+                      <AutoResizeTextarea
                         value={section.instruction}
                         onChange={(e) => onEdit?.(['sections', index, 'instruction'], e.target.value)}
-                        rows={1}
                         className="w-full text-lg font-semibold text-slate-900 leading-snug bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
-                        onInput={(e) => {
-                          const target = e.target as HTMLTextAreaElement;
-                          target.style.height = 'auto';
-                          target.style.height = target.scrollHeight + 'px';
-                        }}
                       />
                       <Edit2 className="absolute -left-6 top-1 w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
@@ -153,6 +193,7 @@ export function QuizRenderer({
                   disabled={disabled}
                   getGradingResult={getGradingResult}
                   onExplain={onExplain}
+                  onFollowUp={onFollowUp}
                   onEdit={(qIndex, field, val) => onEdit?.(['sections', index, 'questions', qIndex, field], val)}
                   onSetQuestionImage={(qIndex) => onSetQuestionImage?.(index, qIndex)}
                   isEditing={mode === 'preview'}
@@ -165,6 +206,8 @@ export function QuizRenderer({
                   onChange={handleAnswerChange}
                   disabled={disabled}
                   getGradingResult={getGradingResult}
+                  onExplain={onExplain}
+                  onFollowUp={onFollowUp}
                   onEdit={(qIndex, field, val) => onEdit?.(['sections', index, 'questions', qIndex, field], val)}
                   onSetQuestionImage={(qIndex) => onSetQuestionImage?.(index, qIndex)}
                   isEditing={mode === 'preview'}
@@ -178,6 +221,7 @@ export function QuizRenderer({
                   disabled={disabled}
                   getGradingResult={getGradingResult}
                   onExplain={onExplain}
+                  onFollowUp={onFollowUp}
                   onEdit={(qIndex, field, val) => onEdit?.(['sections', index, 'questions', qIndex, field], val)}
                   onSetQuestionImage={(qIndex) => onSetQuestionImage?.(index, qIndex)}
                   isEditing={mode === 'preview'}
@@ -194,10 +238,21 @@ export function QuizRenderer({
 function GradingBadge({
   result,
   onExplain,
+  onFollowUp,
 }: {
   result: GradingResult;
   onExplain?: (result: GradingResult) => void;
+  onFollowUp?: (result: GradingResult, message: string) => void;
 }) {
+  const [followUp, setFollowUp] = React.useState('');
+
+  const handleSendFollowUp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!followUp.trim() || !onFollowUp) return;
+    onFollowUp(result, followUp.trim());
+    setFollowUp('');
+  };
+
   return (
     <div className="mt-2">
       <div className="flex items-center gap-2">
@@ -213,26 +268,88 @@ function GradingBadge({
             <span className="text-sm text-slate-500">
               正确答案：<strong className="text-slate-700">{result.correctAnswers.join(' / ')}</strong>
             </span>
-            {onExplain && !result.explanation && (
-              <button
-                onClick={() => onExplain(result)}
-                className="inline-flex items-center gap-1 text-xs px-3 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors font-medium"
-              >
-                <Lightbulb className="w-3 h-3" />
-                AI 解析
-              </button>
-            )}
           </>
+        )}
+        {onExplain && !result.explanation && (
+          <button
+            onClick={() => onExplain(result)}
+            className="inline-flex items-center gap-1 text-xs px-3 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors font-medium"
+          >
+            <Lightbulb className="w-3 h-3" />
+            AI 解析
+          </button>
         )}
       </div>
       {result.explanation && (
-        <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800 leading-relaxed">
-          {result.explanation === '正在生成解析...' ? (
-            <span className="inline-flex items-center gap-2 text-blue-500">
-              <Loader2 className="w-3 h-3 animate-spin" /> 正在生成解析...
-            </span>
-          ) : (
-            result.explanation
+        <div className="mt-2 space-y-2">
+          <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800 leading-relaxed shadow-sm">
+            <div className="flex items-start gap-2">
+              <div className="bg-blue-600/10 p-1 rounded mt-0.5">
+                <Lightbulb className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <div className="flex-1 prose prose-sm prose-blue max-w-none text-blue-800 leading-relaxed overflow-x-auto">
+                {result.explanation === '正在生成解析...' ? (
+                  <span className="inline-flex items-center gap-2 text-blue-500 font-medium no-underline">
+                    <Loader2 className="w-3 h-3 animate-spin" /> 正在生成解析...
+                  </span>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.explanation}</ReactMarkdown>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Message History */}
+          {result.messages && result.messages.length > 0 && (
+            <div className="space-y-4 pl-0 mt-3 flex flex-col items-stretch">
+              {result.messages.map((m, i) => (
+                <div
+                  key={i}
+                  className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} w-full animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                >
+                  <div className={`max-w-[90%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${m.role === 'user'
+                    ? 'bg-white text-slate-700 border border-slate-200 rounded-tr-none ml-6'
+                    : 'bg-blue-50 text-blue-800 border border-blue-100 rounded-tl-none mr-6'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className={`p-1 rounded-lg shrink-0 ${m.role === 'user' ? 'bg-slate-100 text-slate-500' : 'bg-blue-100 text-blue-600'}`}>
+                        {m.role === 'user' ? <MessageCircle className="w-3.5 h-3.5" /> : <Lightbulb className="w-3.5 h-3.5" />}
+                      </div>
+                      <div className="flex-1 pt-0.5 prose prose-sm prose-slate max-w-none text-current leading-relaxed overflow-x-auto">
+                        {m.content === '正在思考...' ? (
+                          <span className="inline-flex items-center gap-2 text-slate-400 font-medium italic no-underline">
+                            <Loader2 className="w-3 h-3 animate-spin" /> AI 正在思考...
+                          </span>
+                        ) : (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Follow-up input */}
+          {result.explanation !== '正在生成解析...' && onFollowUp && (
+            <form onSubmit={handleSendFollowUp} className="relative mt-2 flex items-center gap-2 group">
+              <input
+                type="text"
+                placeholder="追问 AI 关于此题的解析..."
+                value={followUp}
+                onChange={(e) => setFollowUp(e.target.value)}
+                className="flex-1 text-sm bg-white border border-slate-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-100 rounded-lg pl-3 pr-10 py-2 outline-none transition-all placeholder:text-slate-400"
+              />
+              <button
+                type="submit"
+                disabled={!followUp.trim()}
+                className="absolute right-1 p-1.5 text-blue-500 hover:bg-blue-50 disabled:text-slate-300 rounded-md transition-all"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
           )}
         </div>
       )}
@@ -247,12 +364,13 @@ interface SectionProps {
   disabled: boolean;
   getGradingResult?: (id: string) => GradingResult | undefined;
   onExplain?: (result: GradingResult) => void;
+  onFollowUp?: (result: GradingResult, message: string) => void;
   onEdit?: (questionIndex: number, field: string, value: string) => void;
   onSetQuestionImage?: (questionIndex: number) => void;
   isEditing?: boolean;
 }
 
-function FillInTheBlankSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onEdit, isEditing, onSetQuestionImage }: SectionProps) {
+function FillInTheBlankSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onFollowUp, onEdit, isEditing, onSetQuestionImage }: SectionProps) {
   return (
     <div className="space-y-10">
       {section.questions.map((q, qIndex) => {
@@ -279,16 +397,10 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
                       </div>
                     )}
                     {isEditing ? (
-                      <textarea
+                      <AutoResizeTextarea
                         value={q.text}
                         onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
-                        rows={1}
                         className="w-full text-lg text-slate-800 leading-relaxed bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
-                        onInput={(e) => {
-                          const target = e.target as HTMLTextAreaElement;
-                          target.style.height = 'auto';
-                          target.style.height = target.scrollHeight + 'px';
-                        }}
                       />
                     ) : (
                       <div className="text-lg text-slate-800 leading-relaxed">
@@ -306,19 +418,18 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
                     </button>
                   )}
                 </div>
-                
+
                 <div className="flex items-center gap-3">
                   <div className="flex-1 max-w-xl">
                     <input
                       type="text"
                       disabled={disabled}
-                      className={`w-full border-2 rounded-xl px-4 py-3 outline-none font-medium transition-all shadow-sm ${
-                        gradingResult
-                          ? gradingResult.isCorrect
-                            ? 'border-green-300 text-green-700 bg-green-50/50'
-                            : 'border-red-300 text-red-600 bg-red-50/50'
-                          : 'border-slate-200 focus:border-blue-500 text-blue-700 bg-slate-50/30 hover:bg-white hover:border-slate-300'
-                      } disabled:opacity-70 disabled:bg-slate-100`}
+                      className={`w-full border-2 rounded-xl px-4 py-3 outline-none font-medium transition-all shadow-sm ${gradingResult
+                        ? gradingResult.isCorrect
+                          ? 'border-green-300 text-green-700 bg-green-50/50'
+                          : 'border-red-300 text-red-600 bg-red-50/50'
+                        : 'border-slate-200 focus:border-blue-500 text-blue-700 bg-slate-50/30 hover:bg-white hover:border-slate-300'
+                        } disabled:opacity-70 disabled:bg-slate-100`}
                       value={answers[q.id] || ''}
                       onChange={(e) => onChange(q.id, e.target.value)}
                       placeholder={q.placeholder || '在此输入答案...'}
@@ -327,7 +438,7 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
                 </div>
               </div>
             </div>
-            {gradingResult && <div className="pl-12 mt-1"><GradingBadge result={gradingResult} onExplain={onExplain} /></div>}
+            {gradingResult && <div className="pl-12 mt-1"><GradingBadge result={gradingResult} onExplain={onExplain} onFollowUp={onFollowUp} /></div>}
             {isEditing && (
               <div className="pl-12 mt-4 space-y-2">
                 <div className="flex items-center gap-3">
@@ -359,7 +470,7 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
   );
 }
 
-function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditing, getGradingResult, onSetQuestionImage }: Omit<SectionProps, 'onExplain'>) {
+function MatchingSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onFollowUp, onEdit, isEditing, onSetQuestionImage }: SectionProps) {
   const [activeDragId, setActiveDragId] = React.useState<string | null>(null);
 
   return (
@@ -391,16 +502,10 @@ function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditi
                         </div>
                       )}
                       {isEditing ? (
-                        <textarea
+                        <AutoResizeTextarea
                           value={q.text}
                           onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
-                          rows={1}
                           className="w-full text-lg text-slate-800 leading-snug bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
-                          onInput={(e) => {
-                            const target = e.target as HTMLTextAreaElement;
-                            target.style.height = 'auto';
-                            target.style.height = target.scrollHeight + 'px';
-                          }}
                         />
                       ) : (
                         <div className="text-lg text-slate-800 leading-snug">{renderFormattedText(q.text)}</div>
@@ -416,16 +521,15 @@ function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditi
                       </button>
                     )}
                   </div>
-                  
+
                   {/* Drag Drop Area */}
-                  <div 
-                    className={`min-h-[64px] border-2 border-dashed rounded-xl p-3 flex items-center transition-all ${
-                      gradingResult
-                        ? gradingResult.isCorrect ? 'border-green-300 bg-green-50/50' : 'border-red-300 bg-red-50/50'
-                        : matchedOption
-                          ? 'border-blue-200 bg-blue-50/50'
-                          : 'border-slate-200 bg-slate-50/30'
-                    } ${activeDragId && !matchedOption ? 'border-amber-300 bg-amber-50/50 scale-[1.02]' : ''}`}
+                  <div
+                    className={`min-h-[64px] border-2 border-dashed rounded-xl p-3 flex items-center transition-all ${gradingResult
+                      ? gradingResult.isCorrect ? 'border-green-300 bg-green-50/50' : 'border-red-300 bg-red-50/50'
+                      : matchedOption
+                        ? 'border-blue-200 bg-blue-50/50'
+                        : 'border-slate-200 bg-slate-50/30'
+                      } ${activeDragId && !matchedOption ? 'border-amber-300 bg-amber-50/50 scale-[1.02]' : ''}`}
                     onDragOver={(e) => {
                       e.preventDefault();
                       if (!disabled) e.currentTarget.classList.add('border-blue-400', 'bg-blue-50');
@@ -445,21 +549,19 @@ function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditi
                     {matchedOption ? (
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shadow-sm ${
-                            gradingResult 
-                              ? gradingResult.isCorrect ? 'bg-green-600 text-white' : 'bg-red-500 text-white'
-                              : 'bg-blue-600 text-white'
-                          }`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shadow-sm ${gradingResult
+                            ? gradingResult.isCorrect ? 'bg-green-600 text-white' : 'bg-red-500 text-white'
+                            : 'bg-blue-600 text-white'
+                            }`}>
                             {matchedOption.id}
                           </div>
-                          <span className={`font-medium ${
-                            gradingResult 
-                              ? gradingResult.isCorrect ? 'text-green-700' : 'text-red-700'
-                              : 'text-slate-700'
-                          }`}>{matchedOption.text}</span>
+                          <span className={`font-medium ${gradingResult
+                            ? gradingResult.isCorrect ? 'text-green-700' : 'text-red-700'
+                            : 'text-slate-700'
+                            }`}>{matchedOption.text}</span>
                         </div>
                         {!disabled && (
-                          <button 
+                          <button
                             onClick={() => onChange(q.id, '')}
                             className="p-1.5 hover:bg-white rounded-lg transition-colors text-slate-400 hover:text-red-500"
                           >
@@ -474,9 +576,9 @@ function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditi
                     )}
                   </div>
 
-                  {gradingResult && !gradingResult.isCorrect && (
-                    <div className="text-sm font-medium text-red-500">
-                      正确答案: <span className="font-bold">{gradingResult.correctAnswers[0]}</span>
+                  {gradingResult && (
+                    <div className="mt-2">
+                      <GradingBadge result={gradingResult} onExplain={onExplain} onFollowUp={onFollowUp} />
                     </div>
                   )}
 
@@ -526,15 +628,13 @@ function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditi
                     setActiveDragId(opt.id);
                   }}
                   onDragEnd={() => setActiveDragId(null)}
-                  className={`flex gap-4 p-4 rounded-xl border transition-all select-none group ${
-                    isUsed
-                      ? 'bg-slate-100 border-transparent opacity-40 grayscale cursor-not-allowed'
-                      : 'bg-white border-slate-200 cursor-grab active:cursor-grabbing hover:border-blue-400 hover:shadow-md'
-                  }`}
+                  className={`flex gap-4 p-4 rounded-xl border transition-all select-none group ${isUsed
+                    ? 'bg-slate-100 border-transparent opacity-40 grayscale cursor-not-allowed'
+                    : 'bg-white border-slate-200 cursor-grab active:cursor-grabbing hover:border-blue-400 hover:shadow-md'
+                    }`}
                 >
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shrink-0 transition-colors ${
-                    isUsed ? 'bg-slate-200 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white shadow-sm'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shrink-0 transition-colors ${isUsed ? 'bg-slate-200 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white shadow-sm'
+                    }`}>
                     {opt.id}
                   </div>
                   <div className="flex-1">
@@ -553,7 +653,7 @@ function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditi
   );
 }
 
-function ShortAnswerSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onEdit, isEditing, onSetQuestionImage }: SectionProps) {
+function ShortAnswerSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onFollowUp, onEdit, isEditing, onSetQuestionImage }: SectionProps) {
   return (
     <div className="space-y-12">
       {section.questions.map((q, qIndex) => {
@@ -607,33 +707,27 @@ function ShortAnswerSection({ section, answers, onChange, disabled, getGradingRe
                     </button>
                   )}
                 </div>
-                
+
                 <div className="flex items-center gap-3">
                   <div className="flex-1 max-w-2xl">
-                    <textarea
+                    <AutoResizeTextarea
                       disabled={disabled}
                       rows={2}
-                      className={`w-full border-2 rounded-xl px-4 py-3 outline-none font-medium transition-all shadow-sm resize-none ${
-                        gradingResult
-                          ? gradingResult.isCorrect
-                            ? 'border-green-300 text-green-700 bg-green-50/50'
-                            : 'border-red-300 text-red-600 bg-red-50/50'
-                          : 'border-slate-200 focus:border-blue-500 text-blue-700 bg-slate-50/30 hover:bg-white hover:border-slate-300'
-                      } disabled:opacity-70 disabled:bg-slate-100`}
+                      className={`w-full border-2 rounded-xl px-4 py-3 outline-none font-medium transition-all shadow-sm resize-none ${gradingResult
+                        ? gradingResult.isCorrect
+                          ? 'border-green-300 text-green-700 bg-green-50/50'
+                          : 'border-red-300 text-red-600 bg-red-50/50'
+                        : 'border-slate-200 focus:border-blue-500 text-blue-700 bg-slate-50/30 hover:bg-white hover:border-slate-300'
+                        } disabled:opacity-70 disabled:bg-slate-100`}
                       value={answers[q.id] || ''}
                       onChange={(e) => onChange(q.id, e.target.value)}
                       placeholder={q.placeholder || '在此输入您的回答...'}
-                      onInput={(e) => {
-                        const target = e.target as HTMLTextAreaElement;
-                        target.style.height = 'auto';
-                        target.style.height = target.scrollHeight + 'px';
-                      }}
                     />
                   </div>
                 </div>
               </div>
             </div>
-            {gradingResult && <div className="pl-12 mt-1"><GradingBadge result={gradingResult} onExplain={onExplain} /></div>}
+            {gradingResult && <div className="pl-12 mt-1"><GradingBadge result={gradingResult} onExplain={onExplain} onFollowUp={onFollowUp} /></div>}
             {isEditing && (
               <div className="pl-12 mt-4 space-y-2">
                 <div className="flex flex-col gap-1.5">

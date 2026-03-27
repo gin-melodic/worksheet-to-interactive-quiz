@@ -17,13 +17,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileImage, Loader2, ArrowLeft, ArrowRight, Save, Clipboard, CheckCircle2, Edit3, ClipboardPaste, ChevronDown, ChevronUp, Image as ImageIcon, AlertTriangle } from 'lucide-react';
+import { Upload, FileImage, Loader2, ArrowLeft, ArrowRight, Save, Clipboard, CheckCircle2, Edit3, ClipboardPaste, ChevronDown, ChevronUp, Image as ImageIcon, AlertTriangle, Lightbulb } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Quiz } from '@/types/quiz';
 import { QuizRenderer } from '@/components/QuizRenderer';
 import { StepIndicator } from '@/components/StepIndicator';
 import { useRouter } from 'next/navigation';
 import { CropModal } from '@/components/CropModal';
+import { resizeImage } from '@/lib/utils';
 
 const IMAGE_KEYWORDS = ['picture', 'image', '图', '看图', '根据图', '图片'];
 const containsImageKeyword = (text: string) =>
@@ -167,21 +168,18 @@ export default function CreatePage() {
     setError(null);
 
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onloadend = async () => {
-        try {
-          const base64data = reader.result as string;
-          setOriginalImage(base64data);
-          setLoading(false);
-          setStep(1); // Go to answer key step
-        } catch (err: any) {
-          console.error(err);
-          setError("读取图片失败");
-          setStep(0);
-          setLoading(false);
-        }
-      };
+      const base64data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("读取图片失败"));
+        reader.readAsDataURL(file);
+      });
+
+      // Resize image to prevent failure with large clipboard images/high-res photos
+      const optimizedImage = await resizeImage(base64data);
+      setOriginalImage(optimizedImage);
+      setLoading(false);
+      setStep(1); // Go to answer key step
     } catch (err: any) {
       console.error(err);
       setError(err.message || "处理文件时发生错误。");
@@ -190,18 +188,27 @@ export default function CreatePage() {
     }
   };
 
-  const handleAnswerKeyUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAnswerKeyUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       setError("请上传图片文件作为答案。");
       return;
     }
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onloadend = () => {
-      setAnswerKeyImage(reader.result as string);
-    };
+
+    try {
+      const base64data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("读取图片失败"));
+        reader.readAsDataURL(file);
+      });
+      const optimized = await resizeImage(base64data);
+      setAnswerKeyImage(optimized);
+    } catch (err: any) {
+      console.error(err);
+      setError("处理答案图片失败");
+    }
   };
 
   const generateQuiz = async () => {
@@ -413,7 +420,12 @@ ${answerKey.trim() ? `Answer Key Text: ${answerKey.trim()}` : "An image of the a
       const response = await fetch('/api/quizzes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), data: quizData, answerKey: answerKey.trim() || undefined }),
+        body: JSON.stringify({
+          title: title.trim(),
+          data: quizData,
+          answerKey: answerKey.trim() || undefined,
+          originalImage: originalImage,
+        }),
       });
       if (!response.ok) throw new Error('Failed to save quiz');
       const { id } = await response.json();
@@ -482,6 +494,7 @@ ${answerKey.trim() ? `Answer Key Text: ${answerKey.trim()}` : "An image of the a
     setError(null);
 
     try {
+      const optimizedCropped = await resizeImage(croppedImage);
       const section = quizData.sections[rescanSectionIndex];
       const sectionType = section.type;
       const isPictureSection = containsImageKeyword(section.instruction);
@@ -521,7 +534,7 @@ This section is of type: ${sectionType}.`;
             {
               role: "user",
               content: [
-                { type: "image_url", image_url: { url: croppedImage } },
+                { type: "image_url", image_url: { url: optimizedCropped } },
                 { type: "text", text: prompt },
               ],
             },
@@ -699,7 +712,17 @@ This section is of type: ${sectionType}.`;
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-bold text-slate-900 mb-2">上传练习册图片</h2>
                 <p className="text-slate-500">拍照或截图上传，AI 将自动提取并生成互动试卷</p>
+                
+                <div className="mt-8 p-4 bg-amber-50/50 border border-amber-200/40 rounded-3xl flex items-center gap-4 text-amber-900 text-sm max-w-lg mx-auto shadow-sm backdrop-blur-[2px]">
+                  <div className="w-12 h-12 bg-amber-100/60 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-200/50">
+                    <AlertTriangle className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <p className="text-left font-medium leading-relaxed">
+                    PDF识别有误差，请核对每一道题目。尽量截取清晰图片。
+                  </p>
+                </div>
               </div>
+
 
               <div
                 className={`relative group rounded-3xl border-2 border-dashed transition-all duration-200 ${dragActive
@@ -757,6 +780,15 @@ This section is of type: ${sectionType}.`;
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-bold text-slate-900 mb-2">录入参考答案</h2>
                 <p className="text-slate-500">上传答案照片或粘贴文字，AI 将自动填入正确答案</p>
+                
+                <div className="mt-8 p-4 bg-blue-50/50 border border-blue-100 rounded-3xl flex items-center gap-4 text-blue-900 text-sm max-w-lg mx-auto shadow-sm backdrop-blur-[2px]">
+                  <div className="w-12 h-12 bg-blue-100/60 rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-200/50">
+                    <Lightbulb className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <p className="text-left font-medium leading-relaxed">
+                    没有参考答案AI也会自行解题，但是提供书上参考答案会显著提高批改准确性。
+                  </p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -910,6 +942,15 @@ This section is of type: ${sectionType}.`;
                 <div className="flex items-center gap-3 mb-4">
                   <CheckCircle2 className="w-6 h-6 text-green-500" />
                   <h2 className="text-2xl font-bold text-slate-900">提取完成！请检查预览</h2>
+                </div>
+
+                <div className="mb-10 p-5 bg-red-50/50 border border-red-200/50 rounded-3xl flex items-center gap-5 text-red-900 shadow-sm backdrop-blur-sm transition-all duration-300">
+                  <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center flex-shrink-0 border border-red-200/60 shadow-inner">
+                    <AlertTriangle className="w-7 h-7 text-red-600" />
+                  </div>
+                  <p className="text-lg font-bold leading-relaxed">
+                    PDF识别有误差，请严格核对每一道题目。
+                  </p>
                 </div>
 
                 {/* Editable title */}
