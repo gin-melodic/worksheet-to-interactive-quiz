@@ -39,7 +39,12 @@ export default function Home() {
     try {
       const res = await fetch('/api/quizzes');
       const data = await res.json();
-      setQuizzes(data);
+      if (res.ok && Array.isArray(data)) {
+        setQuizzes(data);
+      } else {
+        console.error('Failed to load quizzes or data is not an array:', data);
+        setQuizzes([]); // Fallback to empty array to avoid crash
+      }
     } catch (err) {
       console.error('Failed to load quizzes:', err);
     } finally {

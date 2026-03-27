@@ -21,6 +21,9 @@ export interface Question {
   number: string;
   text: string;
   answer?: string;
+  placeholder?: string; // Custom placeholder for input box
+  imageThumb?: string; // Base64 thumbnail for image-based questions
+  bbox?: [number, number, number, number]; // [ymin, xmin, ymax, xmax] coordinates for cropping
 }
 
 export interface MatchingOption {

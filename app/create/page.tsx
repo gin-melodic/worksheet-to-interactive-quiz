@@ -16,8 +16,8 @@
 
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Upload, FileImage, Loader2, ArrowLeft, ArrowRight, Save, Clipboard, CheckCircle2, Edit3, ClipboardPaste, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, FileImage, Loader2, ArrowLeft, ArrowRight, Save, Clipboard, CheckCircle2, Edit3, ClipboardPaste, ChevronDown, ChevronUp, Image as ImageIcon, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Quiz } from '@/types/quiz';
 import { QuizRenderer } from '@/components/QuizRenderer';
@@ -25,7 +25,39 @@ import { StepIndicator } from '@/components/StepIndicator';
 import { useRouter } from 'next/navigation';
 import { CropModal } from '@/components/CropModal';
 
-const STEPS = ['上传试卷', '录入答案', 'AI 识别', '预览保存'];
+const IMAGE_KEYWORDS = ['picture', 'image', '图', '看图', '根据图', '图片'];
+const containsImageKeyword = (text: string) =>
+  text ? IMAGE_KEYWORDS.some(kw => text.toLowerCase().includes(kw)) : false;
+
+// Helper to crop image from bbox [ymin, xmin, ymax, xmax] (0-1000)
+const cropImage = async (base64: string, bbox: [number, number, number, number]): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas context not available'));
+        return;
+      }
+
+      const [ymin, xmin, ymax, xmax] = bbox;
+      const x = (xmin / 1000) * img.width;
+      const y = (ymin / 1000) * img.height;
+      const width = ((xmax - xmin) / 1000) * img.width;
+      const height = ((ymax - ymin) / 1000) * img.height;
+
+      canvas.width = Math.max(1, width);
+      canvas.height = Math.max(1, height);
+      ctx.drawImage(img, x, y, width, height, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load image for cropping'));
+    img.src = base64;
+  });
+};
+
+const STEPS = ['上传试卷', '录入答案', 'AI 提取', '预览保存'];
 
 export default function CreatePage() {
   const router = useRouter();
@@ -42,6 +74,7 @@ export default function CreatePage() {
   const [answerKeyImage, setAnswerKeyImage] = useState<string | null>(null);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
   const [rescanSectionIndex, setRescanSectionIndex] = useState<number | null>(null);
+  const [rescanQuestionIndex, setRescanQuestionIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const answerKeyInputRef = useRef<HTMLInputElement>(null);
   const [partialOutput, setPartialOutput] = useState('');
@@ -272,6 +305,12 @@ ${answerKey.trim() ? `Answer Key Text: ${answerKey.trim()}` : "An image of the a
                               number: { type: "string" },
                               text: { type: "string" },
                               answer: { type: "string" },
+                              bbox: {
+                                type: "array",
+                                items: { type: "number" },
+                                minItems: 4,
+                                maxItems: 4
+                              },
                             },
                             required: ["id", "number", "text"],
                           },
@@ -342,12 +381,25 @@ ${answerKey.trim() ? `Answer Key Text: ${answerKey.trim()}` : "An image of the a
         throw new Error("Failed to parse quiz data.");
       }
 
+      // Post-process bboxes into thumbnails
+      for (const section of data.sections) {
+        for (const question of section.questions) {
+          if (question.bbox && originalImage) {
+            try {
+              question.imageThumb = await cropImage(originalImage, question.bbox);
+            } catch (e) {
+              console.warn("Failed to crop image for question:", question.id, e);
+            }
+          }
+        }
+      }
+
       setQuizData(data);
       setTitle(data.title || 'Untitled Quiz');
       setStep(3);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "识别过程中发生错误。");
+      setError(err.message || "提取过程中发生错误。");
       setStep(1); // Go back to answer key step on error
     } finally {
       setLoading(false);
@@ -392,22 +444,56 @@ ${answerKey.trim() ? `Answer Key Text: ${answerKey.trim()}` : "An image of the a
 
   const handleRescan = (sectionIndex: number) => {
     setRescanSectionIndex(sectionIndex);
+    setRescanQuestionIndex(null);
+    setIsCropModalOpen(true);
+  };
+
+  const handleSetQuestionImage = (sectionIndex: number, questionIndex: number) => {
+    setRescanSectionIndex(sectionIndex);
+    setRescanQuestionIndex(questionIndex);
     setIsCropModalOpen(true);
   };
 
   const onCropConfirm = async (croppedImage: string) => {
     if (rescanSectionIndex === null || !quizData) return;
+
+    // If we're cropping for an individual question, just update the thumb and return
+    if (rescanQuestionIndex !== null) {
+      const newSections = [...quizData.sections];
+      const newQuestions = [...newSections[rescanSectionIndex].questions];
+      newQuestions[rescanQuestionIndex] = {
+        ...newQuestions[rescanQuestionIndex],
+        imageThumb: croppedImage
+      };
+      newSections[rescanSectionIndex] = {
+        ...newSections[rescanSectionIndex],
+        questions: newQuestions
+      };
+      setQuizData({ ...quizData, sections: newSections });
+      setIsCropModalOpen(false);
+      setRescanSectionIndex(null);
+      setRescanQuestionIndex(null);
+      return;
+    }
+
     setIsCropModalOpen(false);
     setLoading(true);
     setStep(2); // Show processing screen
     setError(null);
 
     try {
-      const sectionType = quizData.sections[rescanSectionIndex].type;
-      const prompt = `Analyze this specific section from a worksheet and convert it into JSON. 
-This section is of type: ${sectionType}.
+      const section = quizData.sections[rescanSectionIndex];
+      const sectionType = section.type;
+      const isPictureSection = containsImageKeyword(section.instruction);
 
-Return ONLY valid JSON in this exact structure:
+      let prompt = `Analyze this specific section from a worksheet and convert it into JSON. 
+This section is of type: ${sectionType}.`;
+
+      if (isPictureSection) {
+        prompt += `\n\nSPECIAL REQUIREMENT: This section contains images. You MUST provide a "bbox": [ymin, xmin, ymax, xmax] for EVERY question.`;
+      }
+
+      prompt += `\n\nReturn ONLY valid JSON in this exact structure:
 {
   "instruction": "section instruction text",
   "type": "${sectionType}",
@@ -418,7 +504,7 @@ Return ONLY valid JSON in this exact structure:
       "id": "q_new_1",
       "number": "1",
       "text": "question text with ___ for blanks",
-      "answer": "correct answer"
+      "answer": "correct answer"${isPictureSection ? ',\n          "bbox": [ymin, xmin, ymax, xmax]' : ''}
     }
   ]
 }`;
@@ -472,6 +558,12 @@ Return ONLY valid JSON in this exact structure:
                         number: { type: "string" },
                         text: { type: "string" },
                         answer: { type: "string" },
+                        bbox: {
+                          type: "array",
+                          items: { type: "number" },
+                          minItems: 4,
+                          maxItems: 4
+                        },
                       },
                       required: ["id", "number", "text"],
                     },
@@ -529,16 +621,28 @@ Return ONLY valid JSON in this exact structure:
       const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
       const content = JSON.parse(cleaned);
 
+      // Post-process bboxes into thumbnails
+      for (const question of content.questions) {
+        if (question.bbox && croppedImage) {
+          try {
+            question.imageThumb = await cropImage(croppedImage, question.bbox);
+          } catch (e) {
+            console.warn("Failed to crop image for re-scanned question:", question.id, e);
+          }
+        }
+      }
+
       const newSections = [...quizData.sections];
       newSections[rescanSectionIndex] = content;
       setQuizData({ ...quizData, sections: newSections });
       setStep(3);
     } catch (err: any) {
-      setError("重新识别失败：" + (err.message || "未知错误"));
+      setError("重新提取失败：" + (err.message || "未知错误"));
       setStep(3);
     } finally {
       setLoading(false);
       setRescanSectionIndex(null);
+      setRescanQuestionIndex(null);
     }
   };
 
@@ -594,7 +698,7 @@ Return ONLY valid JSON in this exact structure:
             >
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-bold text-slate-900 mb-2">上传练习册图片</h2>
-                <p className="text-slate-500">拍照或截图上传，AI 将自动识别并生成互动试卷</p>
+                <p className="text-slate-500">拍照或截图上传，AI 将自动提取并生成互动试卷</p>
               </div>
 
               <div
@@ -732,7 +836,7 @@ Return ONLY valid JSON in this exact structure:
                     disabled={!answerKey.trim() && !answerKeyImage}
                     className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-50 disabled:bg-slate-300"
                   >
-                    开始识别
+                    开始提取
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -750,7 +854,7 @@ Return ONLY valid JSON in this exact structure:
               className="max-w-2xl mx-auto text-center py-12"
             >
               <Loader2 className="w-16 h-16 animate-spin text-blue-600 mx-auto mb-6" />
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">AI 正在识别...</h2>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">AI 正在提取...</h2>
               <p className="text-slate-500">正在对比试卷与答案并生成互动试卷，请稍候</p>
 
               {/* Scrolling Output Effect */}
@@ -805,7 +909,7 @@ Return ONLY valid JSON in this exact structure:
               <div className="mb-8">
                 <div className="flex items-center gap-3 mb-4">
                   <CheckCircle2 className="w-6 h-6 text-green-500" />
-                  <h2 className="text-2xl font-bold text-slate-900">识别完成！请检查预览</h2>
+                  <h2 className="text-2xl font-bold text-slate-900">提取完成！请检查预览</h2>
                 </div>
 
                 {/* Editable title */}
@@ -822,6 +926,28 @@ Return ONLY valid JSON in this exact structure:
                     <Edit3 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   </div>
                 </div>
+
+                {/* Image Heuristic Check */}
+                <div className="space-y-3">
+                  {quizData.sections.map((section, idx) => (
+                    containsImageKeyword(section.instruction) && !section.questions.some(q => q.bbox) && (
+                      <div key={idx} className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-start gap-3 text-sm text-amber-800 shadow-sm animate-in fade-in slide-in-from-top-2">
+                        <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-bold mb-1">检测到图片关键词但未生成缩略图</p>
+                          <p className="opacity-80">第 {idx + 1} 部分的指令包含“图片”或“看图”，但 AI 未能自动裁剪出题目相关的图示。</p>
+                          <button
+                            onClick={() => handleRescan(idx)}
+                            className="mt-2 text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1"
+                          >
+                            <ImageIcon className="w-4 h-4" />
+                            立即手动框选重试
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </div>
               </div>
 
               {/* Quiz Preview */}
@@ -830,6 +956,7 @@ Return ONLY valid JSON in this exact structure:
                 mode="preview"
                 onEdit={handleEdit}
                 onRescan={handleRescan}
+                onSetQuestionImage={handleSetQuestionImage}
               />
 
               {/* Answer Key (optional) */}
@@ -912,6 +1039,7 @@ Return ONLY valid JSON in this exact structure:
           onClose={() => {
             setIsCropModalOpen(false);
             setRescanSectionIndex(null);
+            setRescanQuestionIndex(null);
           }}
         />
       )}

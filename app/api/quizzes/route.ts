@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ id }, { status: 201 });
   } catch (error: any) {
+    console.error('Failed to create quiz:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

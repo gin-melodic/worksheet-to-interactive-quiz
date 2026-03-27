@@ -16,9 +16,8 @@
 
 import React from 'react';
 import { Quiz, Section, GradingResult } from '@/types/quiz';
-import { CheckCircle2, XCircle, Lightbulb, Loader2, RefreshCw, Edit2 } from 'lucide-react';
-
-const BLANK_PATTERN = /_{3,}|\.{3,}/;
+import { CheckCircle2, XCircle, Lightbulb, Loader2, RefreshCw, Edit2, GripVertical, Trash2, Image as ImageIcon } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 const renderFormattedText = (text: string) => {
   const boldParts = text.split(/\*\*([^*]+)\*\*/g);
@@ -46,6 +45,7 @@ interface QuizRendererProps {
   onExplain?: (result: GradingResult) => void;
   onEdit?: (path: (string | number)[], value: string) => void;
   onRescan?: (sectionIndex: number) => void;
+  onSetQuestionImage?: (sectionIndex: number, questionIndex: number) => void;
 }
 
 export function QuizRenderer({
@@ -58,6 +58,7 @@ export function QuizRenderer({
   onExplain,
   onEdit,
   onRescan,
+  onSetQuestionImage,
 }: QuizRendererProps) {
   const [internalAnswers, setInternalAnswers] = React.useState<Record<string, string>>({});
   const answers = externalAnswers ?? internalAnswers;
@@ -125,7 +126,7 @@ export function QuizRenderer({
                   <button
                     onClick={() => onRescan(index)}
                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all shadow-sm border border-slate-200 hover:border-blue-200"
-                    title="重新识别此区域"
+                    title="重新提取此区域"
                   >
                     <RefreshCw className="w-5 h-5" />
                   </button>
@@ -153,6 +154,7 @@ export function QuizRenderer({
                   getGradingResult={getGradingResult}
                   onExplain={onExplain}
                   onEdit={(qIndex, field, val) => onEdit?.(['sections', index, 'questions', qIndex, field], val)}
+                  onSetQuestionImage={(qIndex) => onSetQuestionImage?.(index, qIndex)}
                   isEditing={mode === 'preview'}
                 />
               )}
@@ -162,7 +164,9 @@ export function QuizRenderer({
                   answers={answers}
                   onChange={handleAnswerChange}
                   disabled={disabled}
+                  getGradingResult={getGradingResult}
                   onEdit={(qIndex, field, val) => onEdit?.(['sections', index, 'questions', qIndex, field], val)}
+                  onSetQuestionImage={(qIndex) => onSetQuestionImage?.(index, qIndex)}
                   isEditing={mode === 'preview'}
                 />
               )}
@@ -175,6 +179,7 @@ export function QuizRenderer({
                   getGradingResult={getGradingResult}
                   onExplain={onExplain}
                   onEdit={(qIndex, field, val) => onEdit?.(['sections', index, 'questions', qIndex, field], val)}
+                  onSetQuestionImage={(qIndex) => onSetQuestionImage?.(index, qIndex)}
                   isEditing={mode === 'preview'}
                 />
               )}
@@ -243,10 +248,11 @@ interface SectionProps {
   getGradingResult?: (id: string) => GradingResult | undefined;
   onExplain?: (result: GradingResult) => void;
   onEdit?: (questionIndex: number, field: string, value: string) => void;
+  onSetQuestionImage?: (questionIndex: number) => void;
   isEditing?: boolean;
 }
 
-function FillInTheBlankSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onEdit, isEditing }: SectionProps) {
+function FillInTheBlankSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onEdit, isEditing, onSetQuestionImage }: SectionProps) {
   return (
     <div className="space-y-10">
       {section.questions.map((q, qIndex) => {
@@ -257,23 +263,49 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
             <div className="flex items-start gap-4">
               <span className="font-bold text-slate-300 w-8 text-right shrink-0 mt-1.5 text-xl">{q.number}.</span>
               <div className="flex-1 space-y-4">
-                {isEditing ? (
-                  <textarea
-                    value={q.text}
-                    onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
-                    rows={1}
-                    className="w-full text-lg text-slate-800 leading-relaxed bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
-                    onInput={(e) => {
-                      const target = e.target as HTMLTextAreaElement;
-                      target.style.height = 'auto';
-                      target.style.height = target.scrollHeight + 'px';
-                    }}
-                  />
-                ) : (
-                  <div className="text-lg text-slate-800 leading-relaxed">
-                    {renderFormattedText(q.text)}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    {q.imageThumb && (
+                      <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 shadow-sm max-w-xs group relative">
+                        <img src={q.imageThumb} alt={`Question ${q.number}`} className="w-full h-auto object-contain" />
+                        {isEditing && (
+                          <button
+                            onClick={() => onSetQuestionImage?.(qIndex)}
+                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-2"
+                          >
+                            <ImageIcon className="w-4 h-4" /> 更换图片
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {isEditing ? (
+                      <textarea
+                        value={q.text}
+                        onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
+                        rows={1}
+                        className="w-full text-lg text-slate-800 leading-relaxed bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
+                        onInput={(e) => {
+                          const target = e.target as HTMLTextAreaElement;
+                          target.style.height = 'auto';
+                          target.style.height = target.scrollHeight + 'px';
+                        }}
+                      />
+                    ) : (
+                      <div className="text-lg text-slate-800 leading-relaxed">
+                        {renderFormattedText(q.text)}
+                      </div>
+                    )}
                   </div>
-                )}
+                  {isEditing && !q.imageThumb && (
+                    <button
+                      onClick={() => onSetQuestionImage?.(qIndex)}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-slate-200"
+                      title="设置题目图片"
+                    >
+                      <ImageIcon className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
                 
                 <div className="flex items-center gap-3">
                   <div className="flex-1 max-w-xl">
@@ -289,7 +321,7 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
                       } disabled:opacity-70 disabled:bg-slate-100`}
                       value={answers[q.id] || ''}
                       onChange={(e) => onChange(q.id, e.target.value)}
-                      placeholder={q.answer && !answers[q.id] ? `e.g. ${q.answer}` : '在此输入答案...'}
+                      placeholder={q.placeholder || '在此输入答案...'}
                     />
                   </div>
                 </div>
@@ -297,15 +329,27 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
             </div>
             {gradingResult && <div className="pl-12 mt-1"><GradingBadge result={gradingResult} onExplain={onExplain} /></div>}
             {isEditing && (
-              <div className="pl-12 mt-2 flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Correct Answer:</span>
-                <input
-                  type="text"
-                  value={q.answer || ''}
-                  onChange={(e) => onEdit?.(qIndex, 'answer', e.target.value)}
-                  className="text-xs px-2 py-1 border border-slate-200 rounded bg-slate-50 text-slate-600 outline-none focus:border-blue-400 transition-colors w-40"
-                  placeholder="正确答案"
-                />
+              <div className="pl-12 mt-4 space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider w-24">Correct Answer:</span>
+                  <input
+                    type="text"
+                    value={q.answer || ''}
+                    onChange={(e) => onEdit?.(qIndex, 'answer', e.target.value)}
+                    className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 outline-none focus:border-blue-400 focus:bg-white transition-all w-60 shadow-sm"
+                    placeholder="正确答案"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider w-24">Placeholder:</span>
+                  <input
+                    type="text"
+                    value={q.placeholder || ''}
+                    onChange={(e) => onEdit?.(qIndex, 'placeholder', e.target.value)}
+                    className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 outline-none focus:border-blue-400 focus:bg-white transition-all w-60 shadow-sm"
+                    placeholder="输入框提示文字 (可选)"
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -315,73 +359,193 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
   );
 }
 
-function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditing }: Omit<SectionProps, 'getGradingResult' | 'onExplain'>) {
+function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditing, getGradingResult, onSetQuestionImage }: Omit<SectionProps, 'onExplain'>) {
+  const [activeDragId, setActiveDragId] = React.useState<string | null>(null);
+
   return (
     <div className="grid lg:grid-cols-2 gap-12">
       <div className="space-y-8">
-        {section.questions.map((q, qIndex) => (
-          <div key={q.id}>
-            <div className="flex items-start gap-4">
-              <span className="font-bold text-slate-300 w-8 text-right shrink-0 mt-1.5 text-xl">{q.number}.</span>
-              <div className="flex-1 space-y-3">
-                {isEditing ? (
-                  <textarea
-                    value={q.text}
-                    onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
-                    rows={1}
-                    className="w-full text-lg text-slate-800 leading-snug bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
-                    onInput={(e) => {
-                      const target = e.target as HTMLTextAreaElement;
-                      target.style.height = 'auto';
-                      target.style.height = target.scrollHeight + 'px';
-                    }}
-                  />
-                ) : (
-                  <div className="text-lg text-slate-800 leading-snug">{renderFormattedText(q.text)}</div>
-                )}
-                
-                <div className="flex items-center gap-2">
-                  <select
-                    disabled={disabled}
-                    className="border-2 border-slate-200 rounded-lg px-4 py-2 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 bg-white text-slate-700 font-medium disabled:opacity-70 disabled:bg-slate-50 shadow-sm transition-all hover:border-slate-300"
-                    value={answers[q.id] || ''}
-                    onChange={(e) => onChange(q.id, e.target.value)}
-                  >
-                    <option value="">选择匹配项...</option>
-                    {section.matchingOptions?.map(opt => (
-                      <option key={opt.id} value={opt.id}>{opt.id}: {opt.text}</option>
-                    ))}
-                  </select>
-                </div>
+        {section.questions.map((q, qIndex) => {
+          const currentAnswer = answers[q.id];
+          const matchedOption = section.matchingOptions?.find(opt => opt.id === currentAnswer);
+          const gradingResult = getGradingResult?.(q.id);
 
-                {isEditing && (
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Answer Key:</span>
-                    <input
-                      type="text"
-                      value={q.answer || ''}
-                      onChange={(e) => onEdit?.(qIndex, 'answer', e.target.value)}
-                      className="text-xs px-2 py-1 border border-slate-200 rounded bg-slate-50 text-slate-600 outline-none focus:border-blue-400 transition-colors w-20"
-                      placeholder="ID"
-                    />
+          return (
+            <div key={q.id}>
+              <div className="flex items-start gap-4">
+                <span className="font-bold text-slate-300 w-8 text-right shrink-0 mt-1.5 text-xl">{q.number}.</span>
+                <div className="flex-1 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      {q.imageThumb && (
+                        <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 shadow-sm max-w-xs group relative">
+                          <img src={q.imageThumb} alt={`Question ${q.number}`} className="w-full h-auto object-contain" />
+                          {isEditing && (
+                            <button
+                              onClick={() => onSetQuestionImage?.(qIndex)}
+                              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-2"
+                            >
+                              <ImageIcon className="w-4 h-4" /> 更换图片
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {isEditing ? (
+                        <textarea
+                          value={q.text}
+                          onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
+                          rows={1}
+                          className="w-full text-lg text-slate-800 leading-snug bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
+                          onInput={(e) => {
+                            const target = e.target as HTMLTextAreaElement;
+                            target.style.height = 'auto';
+                            target.style.height = target.scrollHeight + 'px';
+                          }}
+                        />
+                      ) : (
+                        <div className="text-lg text-slate-800 leading-snug">{renderFormattedText(q.text)}</div>
+                      )}
+                    </div>
+                    {isEditing && !q.imageThumb && (
+                      <button
+                        onClick={() => onSetQuestionImage?.(qIndex)}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-slate-200"
+                        title="设置题目图片"
+                      >
+                        <ImageIcon className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
-                )}
+                  
+                  {/* Drag Drop Area */}
+                  <div 
+                    className={`min-h-[64px] border-2 border-dashed rounded-xl p-3 flex items-center transition-all ${
+                      gradingResult
+                        ? gradingResult.isCorrect ? 'border-green-300 bg-green-50/50' : 'border-red-300 bg-red-50/50'
+                        : matchedOption
+                          ? 'border-blue-200 bg-blue-50/50'
+                          : 'border-slate-200 bg-slate-50/30'
+                    } ${activeDragId && !matchedOption ? 'border-amber-300 bg-amber-50/50 scale-[1.02]' : ''}`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (!disabled) e.currentTarget.classList.add('border-blue-400', 'bg-blue-50');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50');
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50');
+                      const optionId = e.dataTransfer.getData('optionId');
+                      if (optionId && !disabled) {
+                        onChange(q.id, optionId);
+                      }
+                    }}
+                  >
+                    {matchedOption ? (
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shadow-sm ${
+                            gradingResult 
+                              ? gradingResult.isCorrect ? 'bg-green-600 text-white' : 'bg-red-500 text-white'
+                              : 'bg-blue-600 text-white'
+                          }`}>
+                            {matchedOption.id}
+                          </div>
+                          <span className={`font-medium ${
+                            gradingResult 
+                              ? gradingResult.isCorrect ? 'text-green-700' : 'text-red-700'
+                              : 'text-slate-700'
+                          }`}>{matchedOption.text}</span>
+                        </div>
+                        {!disabled && (
+                          <button 
+                            onClick={() => onChange(q.id, '')}
+                            className="p-1.5 hover:bg-white rounded-lg transition-colors text-slate-400 hover:text-red-500"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-full text-center text-slate-400 italic text-sm">
+                        {q.placeholder || '将备选项拖拽到此处'}
+                      </div>
+                    )}
+                  </div>
+
+                  {gradingResult && !gradingResult.isCorrect && (
+                    <div className="text-sm font-medium text-red-500">
+                      正确答案: <span className="font-bold">{gradingResult.correctAnswers[0]}</span>
+                    </div>
+                  )}
+
+                  {isEditing && (
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider w-24">Answer Key:</span>
+                        <input
+                          type="text"
+                          value={q.answer || ''}
+                          onChange={(e) => onEdit?.(qIndex, 'answer', e.target.value)}
+                          className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 outline-none focus:border-blue-400 focus:bg-white transition-all w-32 shadow-sm"
+                          placeholder="ID"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider w-24">Placeholder:</span>
+                        <input
+                          type="text"
+                          value={q.placeholder || ''}
+                          onChange={(e) => onEdit?.(qIndex, 'placeholder', e.target.value)}
+                          className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 outline-none focus:border-blue-400 focus:bg-white transition-all w-60 shadow-sm"
+                          placeholder="拖动区域提示文字 (可选)"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {section.matchingOptions && section.matchingOptions.length > 0 && (
-        <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 space-y-4 h-fit sticky top-6">
-          <h3 className="font-bold text-slate-400 uppercase tracking-widest text-xs mb-6">备选项 Word Bank</h3>
+        <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 space-y-4 h-fit sticky top-24">
+          <h3 className="font-bold text-slate-400 uppercase tracking-widest text-xs mb-6 text-center">备选项 (拖拽配对)</h3>
           <div className="space-y-3">
-            {section.matchingOptions.map((opt) => (
-              <div key={opt.id} className="flex gap-4 text-slate-700 text-lg bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                <span className="font-bold text-blue-600 w-6 shrink-0">{opt.id}</span>
-                <span>{opt.text}</span>
-              </div>
-            ))}
+            {section.matchingOptions.map((opt) => {
+              const isUsed = Object.values(answers).includes(opt.id);
+              return (
+                <div
+                  key={opt.id}
+                  draggable={!disabled && !isUsed}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('optionId', opt.id);
+                    setActiveDragId(opt.id);
+                  }}
+                  onDragEnd={() => setActiveDragId(null)}
+                  className={`flex gap-4 p-4 rounded-xl border transition-all select-none group ${
+                    isUsed
+                      ? 'bg-slate-100 border-transparent opacity-40 grayscale cursor-not-allowed'
+                      : 'bg-white border-slate-200 cursor-grab active:cursor-grabbing hover:border-blue-400 hover:shadow-md'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shrink-0 transition-colors ${
+                    isUsed ? 'bg-slate-200 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white shadow-sm'
+                  }`}>
+                    {opt.id}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-slate-700 font-semibold">{opt.text}</div>
+                  </div>
+                  {!isUsed && !disabled && (
+                    <GripVertical className="w-5 h-5 text-slate-300" />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -389,7 +553,7 @@ function MatchingSection({ section, answers, onChange, disabled, onEdit, isEditi
   );
 }
 
-function ShortAnswerSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onEdit, isEditing }: SectionProps) {
+function ShortAnswerSection({ section, answers, onChange, disabled, getGradingResult, onExplain, onEdit, isEditing, onSetQuestionImage }: SectionProps) {
   return (
     <div className="space-y-12">
       {section.questions.map((q, qIndex) => {
@@ -400,23 +564,49 @@ function ShortAnswerSection({ section, answers, onChange, disabled, getGradingRe
             <div className="flex items-start gap-4">
               <span className="font-bold text-slate-300 w-8 text-right shrink-0 mt-1.5 text-xl">{q.number}.</span>
               <div className="flex-1 space-y-4">
-                {isEditing ? (
-                  <textarea
-                    value={q.text}
-                    onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
-                    rows={1}
-                    className="w-full text-lg text-slate-800 leading-relaxed bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
-                    onInput={(e) => {
-                      const target = e.target as HTMLTextAreaElement;
-                      target.style.height = 'auto';
-                      target.style.height = target.scrollHeight + 'px';
-                    }}
-                  />
-                ) : (
-                  <div className="text-lg text-slate-800 leading-relaxed">
-                    {renderFormattedText(q.text)}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    {q.imageThumb && (
+                      <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 shadow-sm max-w-xs group relative">
+                        <img src={q.imageThumb} alt={`Question ${q.number}`} className="w-full h-auto object-contain" />
+                        {isEditing && (
+                          <button
+                            onClick={() => onSetQuestionImage?.(qIndex)}
+                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-2"
+                          >
+                            <ImageIcon className="w-4 h-4" /> 更换图片
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {isEditing ? (
+                      <textarea
+                        value={q.text}
+                        onChange={(e) => onEdit?.(qIndex, 'text', e.target.value)}
+                        rows={1}
+                        className="w-full text-lg text-slate-800 leading-relaxed bg-transparent border-b border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
+                        onInput={(e) => {
+                          const target = e.target as HTMLTextAreaElement;
+                          target.style.height = 'auto';
+                          target.style.height = target.scrollHeight + 'px';
+                        }}
+                      />
+                    ) : (
+                      <div className="text-lg text-slate-800 leading-relaxed">
+                        {renderFormattedText(q.text)}
+                      </div>
+                    )}
                   </div>
-                )}
+                  {isEditing && !q.imageThumb && (
+                    <button
+                      onClick={() => onSetQuestionImage?.(qIndex)}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-slate-200"
+                      title="设置题目图片"
+                    >
+                      <ImageIcon className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
                 
                 <div className="flex items-center gap-3">
                   <div className="flex-1 max-w-2xl">
@@ -432,7 +622,7 @@ function ShortAnswerSection({ section, answers, onChange, disabled, getGradingRe
                       } disabled:opacity-70 disabled:bg-slate-100`}
                       value={answers[q.id] || ''}
                       onChange={(e) => onChange(q.id, e.target.value)}
-                      placeholder={q.answer && !answers[q.id] ? `参考答案：${q.answer}` : '在此输入您的回答...'}
+                      placeholder={q.placeholder || '在此输入您的回答...'}
                       onInput={(e) => {
                         const target = e.target as HTMLTextAreaElement;
                         target.style.height = 'auto';
@@ -445,15 +635,27 @@ function ShortAnswerSection({ section, answers, onChange, disabled, getGradingRe
             </div>
             {gradingResult && <div className="pl-12 mt-1"><GradingBadge result={gradingResult} onExplain={onExplain} /></div>}
             {isEditing && (
-              <div className="pl-12 mt-2 flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Correct Answer:</span>
-                <input
-                  type="text"
-                  value={q.answer || ''}
-                  onChange={(e) => onEdit?.(qIndex, 'answer', e.target.value)}
-                  className="text-xs px-2 py-1 border border-slate-200 rounded bg-slate-50 text-slate-600 outline-none focus:border-blue-400 transition-colors w-full max-w-2xl"
-                  placeholder="正确答案"
-                />
+              <div className="pl-12 mt-4 space-y-2">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Correct Answer:</span>
+                  <input
+                    type="text"
+                    value={q.answer || ''}
+                    onChange={(e) => onEdit?.(qIndex, 'answer', e.target.value)}
+                    className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 outline-none focus:border-blue-400 focus:bg-white transition-all w-full max-w-2xl shadow-sm"
+                    placeholder="正确答案"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Placeholder:</span>
+                  <input
+                    type="text"
+                    value={q.placeholder || ''}
+                    onChange={(e) => onEdit?.(qIndex, 'placeholder', e.target.value)}
+                    className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 outline-none focus:border-blue-400 focus:bg-white transition-all w-full max-w-2xl shadow-sm"
+                    placeholder="输入框提示文字 (可选)"
+                  />
+                </div>
               </div>
             )}
           </div>
