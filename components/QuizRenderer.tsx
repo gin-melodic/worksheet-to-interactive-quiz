@@ -16,6 +16,7 @@
 
 import React from 'react';
 import { Quiz, Section, GradingResult } from '@/types/quiz';
+import Image from 'next/image';
 import { CheckCircle2, XCircle, Lightbulb, Loader2, RefreshCw, Edit2, GripVertical, Trash2, Image as ImageIcon, MessageCircle, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -27,7 +28,7 @@ const renderFormattedText = (text: string) => {
     if (bIndex % 2 === 1) {
       return <strong key={bIndex} className="font-bold text-slate-900">{bPart}</strong>;
     }
-    const underParts = bPart.split(/_([^_]+)_/g);
+    const underParts = bPart.split(/(?<!_)_([^_]+)_(?!_)/g);
     return underParts.map((uPart, uIndex) => {
       if (uIndex % 2 === 1) {
         return <u key={`${bIndex}-${uIndex}`} className="underline decoration-blue-500/50 decoration-2 underline-offset-4 font-semibold text-slate-900 bg-blue-50/30 px-0.5 rounded-sm">{uPart}</u>;
@@ -126,11 +127,10 @@ export function QuizRenderer({
     <div className="max-w-4xl mx-auto p-6 sm:p-10 bg-white rounded-2xl shadow-sm border border-gray-100">
       {mode === 'preview' ? (
         <div className="relative group mb-10">
-          <input
-            type="text"
+          <AutoResizeTextarea
             value={quiz.title}
             onChange={(e) => onEdit?.(['title'], e.target.value)}
-            className="w-full text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-blue-500 outline-none transition-colors"
+            className="w-full text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-blue-500 outline-none transition-colors resize-none overflow-hidden"
             placeholder="试卷标题"
           />
           <Edit2 className="absolute -left-8 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -159,7 +159,7 @@ export function QuizRenderer({
                       <Edit2 className="absolute -left-6 top-1 w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                   ) : (
-                    <h2 className="text-lg font-semibold text-slate-900 leading-snug">{section.instruction}</h2>
+                    <h2 className="text-lg font-semibold text-slate-900 leading-snug whitespace-pre-wrap">{renderFormattedText(section.instruction)}</h2>
                   )}
                 </div>
                 {mode === 'preview' && onRescan && (
@@ -385,7 +385,13 @@ function FillInTheBlankSection({ section, answers, onChange, disabled, getGradin
                   <div className="flex-1">
                     {q.imageThumb && (
                       <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 shadow-sm max-w-xs group relative">
-                        <img src={q.imageThumb} alt={`Question ${q.number}`} className="w-full h-auto object-contain" />
+                        <Image
+                          src={q.imageThumb}
+                          alt={`Question ${q.number}`}
+                          width={400}
+                          height={300}
+                          className="w-full h-auto object-contain"
+                        />
                         {isEditing && (
                           <button
                             onClick={() => onSetQuestionImage?.(qIndex)}
@@ -490,7 +496,13 @@ function MatchingSection({ section, answers, onChange, disabled, getGradingResul
                     <div className="flex-1">
                       {q.imageThumb && (
                         <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 shadow-sm max-w-xs group relative">
-                          <img src={q.imageThumb} alt={`Question ${q.number}`} className="w-full h-auto object-contain" />
+                          <Image
+                            src={q.imageThumb}
+                            alt={`Question ${q.number}`}
+                            width={400}
+                            height={300}
+                            className="w-full h-auto object-contain"
+                          />
                           {isEditing && (
                             <button
                               onClick={() => onSetQuestionImage?.(qIndex)}
@@ -668,7 +680,13 @@ function ShortAnswerSection({ section, answers, onChange, disabled, getGradingRe
                   <div className="flex-1">
                     {q.imageThumb && (
                       <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 shadow-sm max-w-xs group relative">
-                        <img src={q.imageThumb} alt={`Question ${q.number}`} className="w-full h-auto object-contain" />
+                        <Image
+                          src={q.imageThumb}
+                          alt={`Question ${q.number}`}
+                          width={400}
+                          height={300}
+                          className="w-full h-auto object-contain"
+                        />
                         {isEditing && (
                           <button
                             onClick={() => onSetQuestionImage?.(qIndex)}
